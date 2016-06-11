@@ -3,11 +3,8 @@ package org.python.ReL;
 import java.util.*;
 import java.io.*;
 
-import com.thinkaurelius.titan.core.schema.SchemaStatus;
 import com.thinkaurelius.titan.core.schema.TitanGraphIndex;
 import com.thinkaurelius.titan.core.schema.TitanManagement;
-import com.thinkaurelius.titan.graphdb.database.management.GraphIndexStatusReport;
-import com.thinkaurelius.titan.graphdb.database.management.ManagementSystem;
 import org.apache.commons.lang3.SerializationUtils;
 import org.apache.log4j.Level;
 import org.apache.log4j.LogManager;
@@ -58,12 +55,6 @@ public class TitanNoSQLDatabase extends DatabaseInterface {
             TitanGraphIndex classDefIndex = mgmt.buildIndex("byClassDefName", Vertex.class).addKey(classDefName).
                     indexOnly(classDefLabel).buildCompositeIndex();
             mgmt.commit();
-            try {
-                GraphIndexStatusReport classDefReport = ManagementSystem.awaitGraphIndexStatus(graph, "byClassDefName").
-                        status(SchemaStatus.REGISTERED).call();
-            } catch (Exception e) {
-                System.out.println("e = " + e.toString());
-            }
 
             mgmt = graph.openManagement();
             PropertyKey WDBObjectName = mgmt.makePropertyKey("WDBObjectName").dataType(String.class).make();
@@ -71,12 +62,6 @@ public class TitanNoSQLDatabase extends DatabaseInterface {
             TitanGraphIndex WDBObjectIndex = mgmt.buildIndex("byWDBObjectName", Vertex.class).addKey(WDBObjectName).
                     indexOnly(WDBObjectLabel).buildCompositeIndex();
             mgmt.commit();
-            try {
-                GraphIndexStatusReport WDBObjectReport = ManagementSystem.awaitGraphIndexStatus(graph, "byWDBObjectName").
-                        status(SchemaStatus.REGISTERED).call();
-            } catch (Exception e) {
-                System.out.println("e = " + e.toString());
-            }
         }
     }
 
@@ -191,7 +176,25 @@ public class TitanNoSQLDatabase extends DatabaseInterface {
         }
         final byte[] data = SerializationUtils.serialize(wdbObject);
         WDBObjectVertex.property("WDBObjectData", data);
+
+        ArrayList<String> dvaNameList = wdbObject.getDvaNames();
+        ArrayList<String> dvaValueList = wdbObject.getDvaValues();
+        for (int i = 0; i < dvaNameList.size(); i++) {
+            if (!WDBObjectVertex.property(dvaNameList.get(i)).isPresent()) {
+                WDBObjectVertex.property(dvaNameList.get(i), dvaValueList.get(i));
+            }
+            TitanManagement mgmt = graph.openManagement();
+            String currentPropertyKeyName = wdbObject.getClassName() + dvaNameList.get(i);
+            if(!mgmt.containsPropertyKey(currentPropertyKeyName)) {
+                PropertyKey currentPropertyKey = mgmt.makePropertyKey(currentPropertyKeyName).dataType(String.class).make();
+                VertexLabel WDBObjectLabel = mgmt.getVertexLabel("WDBObject");
+                TitanGraphIndex WDBObjectIndex = mgmt.buildIndex("by" + currentPropertyKeyName, Vertex.class)
+                        .addKey(currentPropertyKey).indexOnly(WDBObjectLabel).buildCompositeIndex();
+                mgmt.commit();
+            }
+        }
         graph.tx().commit();
+
         System.out.println("Inserting WDBObject " + wdbObject.getUid() + " complete");
     }
 
